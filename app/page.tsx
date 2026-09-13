@@ -1,0 +1,93 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  detectPredictionDrift,
+  scheduleJob,
+  type AiJob,
+  type PlacementPrediction,
+} from "@/lib/orchestrator";
+
+const jobs: AiJob[] = [
+  { id: "job-1842", modality: "multimodal", modelFamily: "VLM-13B", memoryGb: 18, latencySloMs: 900, minimumQuality: 0.86, maxCostUsd: 0.03 },
+  { id: "job-1843", modality: "vision", modelFamily: "ViT-L", memoryGb: 12, latencySloMs: 500, minimumQuality: 0.9, maxCostUsd: 0.018, privacyZone: "private" },
+  { id: "job-1844", modality: "text", modelFamily: "LLM-8B", memoryGb: 10, latencySloMs: 650, minimumQuality: 0.82, maxCostUsd: 0.02 },
+];
+
+const predictions: PlacementPrediction[] = [
+  { nodeId: "gpu-edge-01", gpu: "RTX 4090", availableMemoryGb: 21, queueDepth: 3, zone: "private", latencyMs: 430, latencyUncertaintyMs: 72, quality: 0.87, qualityUncertainty: 0.025, costUsd: 0.009 },
+  { nodeId: "gpu-cloud-04", gpu: "A100 80GB", availableMemoryGb: 63, queueDepth: 7, zone: "public", latencyMs: 310, latencyUncertaintyMs: 38, quality: 0.92, qualityUncertainty: 0.012, costUsd: 0.027 },
+  { nodeId: "gpu-cloud-09", gpu: "L40S", availableMemoryGb: 39, queueDepth: 1, zone: "public", latencyMs: 365, latencyUncertaintyMs: 96, quality: 0.9, qualityUncertainty: 0.041, costUsd: 0.015 },
+  { nodeId: "gpu-edge-03", gpu: "Jetson AGX", availableMemoryGb: 10, queueDepth: 0, zone: "private", latencyMs: 790, latencyUncertaintyMs: 155, quality: 0.81, qualityUncertainty: 0.06, costUsd: 0.003 },
+];
+
+const drift = detectPredictionDrift([
+  { nodeId: "gpu-edge-01", predictedLatencyMs: 390, actualLatencyMs: 432, predictedQuality: 0.89, actualQuality: 0.87 },
+  { nodeId: "gpu-cloud-04", predictedLatencyMs: 275, actualLatencyMs: 338, predictedQuality: 0.93, actualQuality: 0.91 },
+  { nodeId: "gpu-cloud-09", predictedLatencyMs: 350, actualLatencyMs: 508, predictedQuality: 0.9, actualQuality: 0.83 },
+]);
+
+export default function Home() {
+  const [jobId, setJobId] = useState(jobs[0].id);
+  const job = jobs.find((item) => item.id === jobId) ?? jobs[0];
+  const decision = useMemo(() => scheduleJob(job, predictions), [job]);
+
+  return (
+    <main className="min-h-screen bg-[#071019] text-slate-100">
+      <header className="border-b border-slate-800 bg-[#0a1520]">
+        <div className="mx-auto flex max-w-[1440px] items-center gap-4 px-5 py-4 sm:px-8">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-cyan-300 font-bold text-slate-950">A</span>
+          <div><p className="font-semibold">Adaptive AI Orchestrator</p><p className="text-xs text-slate-500">Counterfactual policy lab</p></div>
+          <span className={`ml-auto rounded-full px-3 py-1 text-xs ${drift.drifting ? "bg-amber-400/10 text-amber-300" : "bg-emerald-400/10 text-emerald-300"}`}>{drift.drifting ? "Drift detected" : "Policy calibrated"}</span>
+        </div>
+      </header>
+
+      <section className="mx-auto max-w-[1440px] px-5 py-7 sm:px-8">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-cyan-300">Placement decision</p><h1 className="mt-2 text-2xl font-semibold">Choose compute with uncertainty included</h1></div>
+          <label className="text-sm text-slate-400">Inspect job <select value={jobId} onChange={(event) => setJobId(event.target.value)} className="ml-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100">{jobs.map((item) => <option key={item.id}>{item.id}</option>)}</select></label>
+        </div>
+
+        <div className="mb-5 grid gap-3 sm:grid-cols-4">
+          <Fact label="Modality" value={job.modality} />
+          <Fact label="Model" value={job.modelFamily} />
+          <Fact label="Latency SLO" value={`${job.latencySloMs} ms`} />
+          <Fact label="Quality floor" value={`${Math.round(job.minimumQuality * 100)}%`} />
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-[#0a1520]">
+          <Table>
+            <TableHeader className="bg-slate-900/70 text-slate-400"><TableRow className="border-slate-800 hover:bg-transparent"><TableHead>Candidate node</TableHead><TableHead>Predicted latency</TableHead><TableHead>Quality bound</TableHead><TableHead>Queue</TableHead><TableHead>Cost</TableHead><TableHead>Risk score</TableHead><TableHead>Decision</TableHead></TableRow></TableHeader>
+            <TableBody>{decision.alternatives.map((candidate) => {
+              const selected = decision.selected?.nodeId === candidate.nodeId;
+              const shadow = decision.shadowCandidate?.nodeId === candidate.nodeId;
+              return <TableRow key={candidate.nodeId} className="border-slate-800 hover:bg-slate-800/40">
+                <TableCell><span className="font-medium">{candidate.nodeId}</span><span className="block text-xs text-slate-500">{candidate.gpu} · {candidate.zone}</span></TableCell>
+                <TableCell>{candidate.latencyMs} ± {candidate.latencyUncertaintyMs} ms</TableCell>
+                <TableCell>{((candidate.quality - 1.28 * candidate.qualityUncertainty) * 100).toFixed(1)}%</TableCell>
+                <TableCell>{candidate.queueDepth}</TableCell><TableCell>${candidate.costUsd.toFixed(3)}</TableCell><TableCell className="font-mono">{candidate.score.toFixed(3)}</TableCell>
+                <TableCell>{selected ? <Tag color="cyan">selected</Tag> : shadow ? <Tag color="violet">shadow run</Tag> : <span className="text-slate-600">—</span>}</TableCell>
+              </TableRow>;
+            })}</TableBody>
+          </Table>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <article className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[.06] p-5"><p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Production assignment</p><p className="mt-3 text-lg font-semibold">{decision.selected?.nodeId ?? "No feasible node"}</p><p className="mt-1 text-sm leading-6 text-slate-400">Chosen from conservative latency and quality bounds, memory constraints, queue pressure, privacy, and cost.</p></article>
+          <article className="rounded-2xl border border-violet-400/20 bg-violet-400/[.06] p-5"><p className="text-xs font-semibold uppercase tracking-wider text-violet-300">Counterfactual probe</p><p className="mt-3 text-lg font-semibold">{decision.shadowCandidate?.nodeId ?? "No probe within budget"}</p><p className="mt-1 text-sm leading-6 text-slate-400">A low-cost shadow run measures the alternative outcome and teaches the next scheduling decision.</p></article>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border border-slate-800 bg-[#0a1520] p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 capitalize text-slate-200">{value}</p></div>; }
+function Tag({ children, color }: { children: React.ReactNode; color: "cyan" | "violet" }) { return <span className={`rounded-full px-2.5 py-1 text-xs ${color === "cyan" ? "bg-cyan-300/10 text-cyan-300" : "bg-violet-300/10 text-violet-300"}`}>{children}</span>; }
