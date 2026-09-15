@@ -10,8 +10,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { runBenchmark } from "@/lib/evaluation";
+import { CounterfactualFeedbackLoop } from "@/lib/feedback";
 import {
-  detectPredictionDrift,
   scheduleJob,
   type AiJob,
   type PlacementPrediction,
@@ -30,16 +30,47 @@ const predictions: PlacementPrediction[] = [
   { nodeId: "gpu-edge-03", gpu: "Jetson AGX", availableMemoryGb: 10, queueDepth: 0, zone: "private", latencyMs: 790, latencyUncertaintyMs: 155, quality: 0.81, qualityUncertainty: 0.06, costUsd: 0.003 },
 ];
 
-const drift = detectPredictionDrift([
-  { nodeId: "gpu-edge-01", predictedLatencyMs: 390, actualLatencyMs: 432, predictedQuality: 0.89, actualQuality: 0.87 },
-  { nodeId: "gpu-cloud-04", predictedLatencyMs: 275, actualLatencyMs: 338, predictedQuality: 0.93, actualQuality: 0.91 },
-  { nodeId: "gpu-cloud-09", predictedLatencyMs: 350, actualLatencyMs: 508, predictedQuality: 0.9, actualQuality: 0.83 },
-]);
+function buildFeedbackDemo() {
+  const loop = new CounterfactualFeedbackLoop({
+    windowSize: 6,
+    minSamples: 4,
+    latencyErrorThreshold: 0.15,
+    qualityErrorThreshold: 0.05,
+  });
+  const selected = predictions[1];
+  const shadow = predictions[2];
+
+  const samples = [
+    {
+      selected: { nodeId: selected.nodeId, latencyMs: 352, quality: 0.9, costUsd: selected.costUsd },
+      shadow: { nodeId: shadow.nodeId, latencyMs: 472, quality: 0.84, costUsd: shadow.costUsd },
+    },
+    {
+      selected: { nodeId: selected.nodeId, latencyMs: 401, quality: 0.87, costUsd: selected.costUsd },
+      shadow: { nodeId: shadow.nodeId, latencyMs: 515, quality: 0.82, costUsd: shadow.costUsd },
+    },
+    {
+      selected: { nodeId: selected.nodeId, latencyMs: 438, quality: 0.86, costUsd: selected.costUsd },
+      shadow: { nodeId: shadow.nodeId, latencyMs: 548, quality: 0.8, costUsd: shadow.costUsd },
+    },
+  ];
+
+  let latest = loop.record(1, selected, samples[0].selected, shadow, samples[0].shadow);
+  samples.slice(1).forEach((sample, index) => {
+    latest = loop.record(index + 2, selected, sample.selected, shadow, sample.shadow);
+  });
+
+  return latest;
+}
 
 export default function Home() {
   const [jobId, setJobId] = useState(jobs[0].id);
   const job = jobs.find((item) => item.id === jobId) ?? jobs[0];
-  const decision = useMemo(() => scheduleJob(job, predictions), [job]);
+  const feedback = useMemo(() => buildFeedbackDemo(), []);
+  const decision = useMemo(
+    () => scheduleJob(job, predictions, feedback.snapshot.confidenceWidth),
+    [job, feedback.snapshot.confidenceWidth],
+  );
   const benchmark = useMemo(() => runBenchmark(42, 100), []);
 
   return (
@@ -48,7 +79,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-[1440px] items-center gap-4 px-5 py-4 sm:px-8">
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-cyan-300 font-bold text-slate-950">A</span>
           <div><p className="font-semibold">Adaptive AI Orchestrator</p><p className="text-xs text-slate-500">Counterfactual policy lab</p></div>
-          <span className={`ml-auto rounded-full px-3 py-1 text-xs ${drift.drifting ? "bg-amber-400/10 text-amber-300" : "bg-emerald-400/10 text-emerald-300"}`}>{drift.drifting ? "Drift detected" : "Policy calibrated"}</span>
+          <span className={`ml-auto rounded-full px-3 py-1 text-xs ${feedback.snapshot.drifting ? "bg-amber-400/10 text-amber-300" : "bg-emerald-400/10 text-emerald-300"}`}>{feedback.snapshot.drifting ? "Drift detected · recalibrating" : "Policy calibrated"}</span>
         </div>
       </header>
 
@@ -74,7 +105,7 @@ export default function Home() {
               return <TableRow key={candidate.nodeId} className="border-slate-800 hover:bg-slate-800/40">
                 <TableCell><span className="font-medium">{candidate.nodeId}</span><span className="block text-xs text-slate-500">{candidate.gpu} · {candidate.zone}</span></TableCell>
                 <TableCell>{candidate.latencyMs} ± {candidate.latencyUncertaintyMs} ms</TableCell>
-                <TableCell>{((candidate.quality - 1.28 * candidate.qualityUncertainty) * 100).toFixed(1)}%</TableCell>
+                <TableCell>{((candidate.quality - feedback.snapshot.confidenceWidth * candidate.qualityUncertainty) * 100).toFixed(1)}%</TableCell>
                 <TableCell>{candidate.queueDepth}</TableCell><TableCell>${candidate.costUsd.toFixed(3)}</TableCell><TableCell className="font-mono">{candidate.score.toFixed(3)}</TableCell>
                 <TableCell>{selected ? <Tag color="cyan">selected</Tag> : shadow ? <Tag color="violet">shadow run</Tag> : <span className="text-slate-600">—</span>}</TableCell>
               </TableRow>;
@@ -102,6 +133,28 @@ export default function Home() {
 
         <section className="mt-8">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-amber-300">Feedback loop</p><h2 className="mt-2 text-xl font-semibold">Drift and recalibration state</h2></div>
+            <p className="text-xs text-slate-500">rolling window · {feedback.snapshot.samplesInWindow} outcomes</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <FeedbackMetric label="Calibration state" value={feedback.snapshot.drifting ? "recalibrating" : "stable"} accent={feedback.snapshot.drifting} />
+            <FeedbackMetric label="Confidence width" value={`${feedback.snapshot.confidenceWidth.toFixed(2)}σ`} accent={feedback.snapshot.drifting} />
+            <FeedbackMetric label="Latency MAPE" value={`${(feedback.snapshot.latencyMape * 100).toFixed(1)}%`} accent={feedback.snapshot.latencyMape > 0.15} />
+            <FeedbackMetric label="Quality MAE" value={`${(feedback.snapshot.qualityMae * 100).toFixed(1)} pts`} accent={feedback.snapshot.qualityMae > 0.05} />
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <FeedbackMetric label="Recalibration version" value={`v${feedback.snapshot.recalibrationVersion}`} />
+            <FeedbackMetric label="Drift started" value={feedback.snapshot.driftStartedAt === null ? "none" : `step ${feedback.snapshot.driftStartedAt}`} />
+            <FeedbackMetric label="Recovery" value={feedback.snapshot.recoverySteps === null ? "pending" : `${feedback.snapshot.recoverySteps} steps`} />
+          </div>
+          {feedback.signal ? <div className="mt-4 rounded-2xl border border-slate-800 bg-[#0a1520] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-300">Latest counterfactual signal</p><p className="mt-2 text-sm text-slate-300">{feedback.signal.shadowNodeId} vs {feedback.signal.selectedNodeId}</p></div><Tag color={feedback.signal.shadowBetter ? "violet" : "cyan"}>{feedback.signal.shadowBetter ? "shadow better" : "production better"}</Tag></div>
+            <p className="mt-3 text-sm text-slate-500">Shadow advantage <span className="font-mono text-slate-300">{feedback.signal.shadowAdvantage.toFixed(4)}</span>. Positive values mean the shadow placement delivered lower realized utility cost.</p>
+          </div> : null}
+        </section>
+
+        <section className="mt-8">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-violet-300">Policy benchmark</p><h2 className="mt-2 text-xl font-semibold">Reproducible scheduler comparison</h2></div>
             <p className="text-xs text-slate-500">seed 42 · 100 synthetic jobs</p>
           </div>
@@ -126,4 +179,5 @@ export default function Home() {
 
 function Fact({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border border-slate-800 bg-[#0a1520] p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 capitalize text-slate-200">{value}</p></div>; }
 function ProbeMetric({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-mono text-slate-200">{value}</p></div>; }
+function FeedbackMetric({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) { return <div className={`rounded-xl border p-4 ${accent ? "border-amber-400/20 bg-amber-400/[.05]" : "border-slate-800 bg-[#0a1520]"}`}><p className="text-xs text-slate-500">{label}</p><p className={`mt-1 font-mono ${accent ? "text-amber-200" : "text-slate-200"}`}>{value}</p></div>; }
 function Tag({ children, color }: { children: React.ReactNode; color: "cyan" | "violet" }) { return <span className={`rounded-full px-2.5 py-1 text-xs ${color === "cyan" ? "bg-cyan-300/10 text-cyan-300" : "bg-violet-300/10 text-violet-300"}`}>{children}</span>; }
