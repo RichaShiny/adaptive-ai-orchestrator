@@ -84,7 +84,20 @@ export default function Home() {
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           <article className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[.06] p-5"><p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Production assignment</p><p className="mt-3 text-lg font-semibold">{decision.selected?.nodeId ?? "No feasible node"}</p><p className="mt-1 text-sm leading-6 text-slate-400">Chosen from conservative latency and quality bounds, memory constraints, queue pressure, privacy, and cost.</p></article>
-          <article className="rounded-2xl border border-violet-400/20 bg-violet-400/[.06] p-5"><p className="text-xs font-semibold uppercase tracking-wider text-violet-300">Counterfactual probe</p><p className="mt-3 text-lg font-semibold">{decision.shadowCandidate?.nodeId ?? "No probe within budget"}</p><p className="mt-1 text-sm leading-6 text-slate-400">A low-cost shadow run measures the alternative outcome and teaches the next scheduling decision.</p></article>
+          <article className="rounded-2xl border border-violet-400/20 bg-violet-400/[.06] p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-violet-300">Counterfactual probe</p>
+            <p className="mt-3 text-lg font-semibold">{decision.shadowCandidate?.nodeId ?? "No probe within budget"}</p>
+            <p className="mt-1 text-sm leading-6 text-slate-400">A low-cost shadow run measures the alternative outcome and teaches the next scheduling decision.</p>
+            {decision.shadowExplanation ? <div className="mt-4 border-t border-violet-300/10 pt-4">
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <ProbeMetric label="Uncertainty" value={decision.shadowExplanation.uncertaintyScore.toFixed(3)} />
+                <ProbeMetric label="Info gain" value={decision.shadowExplanation.informationGainScore.toFixed(3)} />
+                <ProbeMetric label="Cost ratio" value={`${(decision.shadowExplanation.probeCostRatio * 100).toFixed(1)}%`} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">{decision.shadowExplanation.reasons.map((reason) => <span key={reason} className="rounded-full border border-violet-300/15 bg-violet-300/[.06] px-2.5 py-1 text-xs text-violet-200">{reason.replaceAll("-", " ")}</span>)}</div>
+              <p className="mt-3 text-xs text-slate-500">Selection score {decision.shadowExplanation.selectionScore.toFixed(3)} · shadow budget ${decision.shadowExplanation.budgetLimitUsd.toFixed(4)}</p>
+            </div> : null}
+          </article>
         </div>
 
         <section className="mt-8">
@@ -112,4 +125,5 @@ export default function Home() {
 }
 
 function Fact({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border border-slate-800 bg-[#0a1520] p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 capitalize text-slate-200">{value}</p></div>; }
+function ProbeMetric({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-mono text-slate-200">{value}</p></div>; }
 function Tag({ children, color }: { children: React.ReactNode; color: "cyan" | "violet" }) { return <span className={`rounded-full px-2.5 py-1 text-xs ${color === "cyan" ? "bg-cyan-300/10 text-cyan-300" : "bg-violet-300/10 text-violet-300"}`}>{children}</span>; }
