@@ -70,6 +70,7 @@ export function buildBenchmarkReport(seed: number, count: number) {
   return {
     seed,
     count,
+    generatedAt: null,
     metrics: runBenchmark(seed, count),
   };
 }
