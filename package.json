@@ -11,7 +11,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node --test --experimental-strip-types test/evaluation.test.ts test/feedback.test.ts test/benchmark.test.ts",
+    "test": "node --test --experimental-strip-types test/evaluation.test.ts test/feedback.test.ts test/benchmark.test.ts test/shadow-selection.test.ts",
     "benchmark": "node --experimental-strip-types scripts/benchmark.ts",
     "db:generate": "drizzle-kit generate"
   },
