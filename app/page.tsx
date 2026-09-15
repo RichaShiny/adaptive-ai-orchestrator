@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { runBenchmark } from "@/lib/evaluation";
 import {
   detectPredictionDrift,
   scheduleJob,
@@ -39,6 +40,7 @@ export default function Home() {
   const [jobId, setJobId] = useState(jobs[0].id);
   const job = jobs.find((item) => item.id === jobId) ?? jobs[0];
   const decision = useMemo(() => scheduleJob(job, predictions), [job]);
+  const benchmark = useMemo(() => runBenchmark(42, 100), []);
 
   return (
     <main className="min-h-screen bg-[#071019] text-slate-100">
@@ -84,6 +86,26 @@ export default function Home() {
           <article className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[.06] p-5"><p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Production assignment</p><p className="mt-3 text-lg font-semibold">{decision.selected?.nodeId ?? "No feasible node"}</p><p className="mt-1 text-sm leading-6 text-slate-400">Chosen from conservative latency and quality bounds, memory constraints, queue pressure, privacy, and cost.</p></article>
           <article className="rounded-2xl border border-violet-400/20 bg-violet-400/[.06] p-5"><p className="text-xs font-semibold uppercase tracking-wider text-violet-300">Counterfactual probe</p><p className="mt-3 text-lg font-semibold">{decision.shadowCandidate?.nodeId ?? "No probe within budget"}</p><p className="mt-1 text-sm leading-6 text-slate-400">A low-cost shadow run measures the alternative outcome and teaches the next scheduling decision.</p></article>
         </div>
+
+        <section className="mt-8">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-violet-300">Policy benchmark</p><h2 className="mt-2 text-xl font-semibold">Reproducible scheduler comparison</h2></div>
+            <p className="text-xs text-slate-500">seed 42 · 100 synthetic jobs</p>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-[#0a1520]">
+            <Table>
+              <TableHeader className="bg-slate-900/70 text-slate-400"><TableRow className="border-slate-800 hover:bg-transparent"><TableHead>Policy</TableHead><TableHead>Success rate</TableHead><TableHead>SLO violations</TableHead><TableHead>Mean cost</TableHead><TableHead>Mean regret</TableHead></TableRow></TableHeader>
+              <TableBody>{benchmark.map((row) => <TableRow key={row.policy} className="border-slate-800 hover:bg-slate-800/40">
+                <TableCell className="font-medium capitalize">{row.policy.replace("-", " ")}{row.policy === "counterfactual" ? <span className="ml-2"><Tag color="violet">risk-aware</Tag></span> : null}</TableCell>
+                <TableCell>{(row.successRate * 100).toFixed(1)}%</TableCell>
+                <TableCell>{(row.sloViolationRate * 100).toFixed(1)}%</TableCell>
+                <TableCell>${row.meanCostUsd.toFixed(4)}</TableCell>
+                <TableCell className="font-mono">{row.meanRegret.toFixed(4)}</TableCell>
+              </TableRow>)}</TableBody>
+            </Table>
+          </div>
+          <p className="mt-3 text-sm text-slate-500">Each policy sees the same deterministic workload and realized outcomes, making the comparison directly replayable from the benchmark command.</p>
+        </section>
       </section>
     </main>
   );
