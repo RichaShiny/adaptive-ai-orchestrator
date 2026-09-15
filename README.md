@@ -39,6 +39,26 @@ Run the evaluation tests with:
 npm test
 ```
 
+Run a reproducible policy benchmark with the default seed and 100 jobs:
+
+```bash
+npm run benchmark
+```
+
+Override the seed or workload size when comparing policy changes:
+
+```bash
+npm run benchmark -- --seed 21 --count 500
+```
+
+The runner supports `table`, `json`, and `markdown` output. For example:
+
+```bash
+npm run benchmark -- --seed 21 --count 500 --format markdown
+```
+
+The same seed and job count produce the same benchmark report, making results easy to compare across scheduler changes and pull requests.
+
 ## Planned evaluation
 
 Compare FIFO, least-loaded, predicted-best, and counterfactual policies using:
