@@ -40,3 +40,7 @@ Requires Node.js 22.13 or newer.
 npm run install:ci
 npm run dev
 ```
+
+The application uses standard Next.js. Run `npm run build` for a production
+build and `npm start` to serve it. No external authentication or hosting
+integration is required.
