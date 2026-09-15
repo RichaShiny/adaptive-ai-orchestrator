@@ -22,6 +22,23 @@ The research question is: **Can selective counterfactual exploration reduce sche
 - Latency and quality drift detection
 - Interactive decision table for inspecting placements
 
+## Evaluation harness
+
+The deterministic evaluation harness compares four policies against identical seeded workloads:
+
+- `fifo`: first feasible placement
+- `least-loaded`: feasible node with the smallest queue
+- `predicted-best`: lowest point-estimate latency/quality/cost utility
+- `counterfactual`: the current uncertainty-aware risk policy
+
+Each placement is compared with the best feasible observed outcome to calculate scheduling regret. The harness also records success, SLO violations, and realized cost. Synthetic workloads are reproducible by seed so policy changes can be regression-tested against the same cases.
+
+Run the evaluation tests with:
+
+```bash
+npm test
+```
+
 ## Planned evaluation
 
 Compare FIFO, least-loaded, predicted-best, and counterfactual policies using:
