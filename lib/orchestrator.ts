@@ -28,14 +28,67 @@ export type ScoredPlacement = PlacementPrediction & {
   reasons: string[];
 };
 
+export type ShadowSelectionExplanation = {
+  nodeId: string;
+  uncertaintyScore: number;
+  informationGainScore: number;
+  probeCostRatio: number;
+  selectionScore: number;
+  budgetLimitUsd: number;
+  reasons: string[];
+};
+
 export type SchedulingDecision = {
   selected: ScoredPlacement | null;
   alternatives: ScoredPlacement[];
   shadowCandidate: ScoredPlacement | null;
+  shadowExplanation: ShadowSelectionExplanation | null;
 };
 
 const clamp = (value: number, low = 0, high = 1) =>
   Math.min(high, Math.max(low, value));
+
+function explainShadowCandidate(
+  job: AiJob,
+  selected: ScoredPlacement | null,
+  candidate: ScoredPlacement,
+): ShadowSelectionExplanation {
+  const latencyUncertainty =
+    candidate.latencyUncertaintyMs / Math.max(job.latencySloMs, 1);
+  const qualityUncertainty = candidate.qualityUncertainty * 2;
+  const uncertaintyScore = clamp(latencyUncertainty + qualityUncertainty);
+  const scoreGap = selected
+    ? clamp(
+        Math.abs(candidate.score - selected.score) /
+          Math.max(Math.abs(selected.score), 1),
+      )
+    : 0;
+  const decisionBoundaryValue = 1 - scoreGap;
+  const informationGainScore = clamp(
+    uncertaintyScore * 0.7 + decisionBoundaryValue * 0.3,
+  );
+  const probeCostRatio = clamp(
+    candidate.costUsd / Math.max(job.maxCostUsd, 0.0001),
+  );
+  const selectionScore = informationGainScore - probeCostRatio * 0.35;
+  const budgetLimitUsd = job.maxCostUsd * 0.35;
+  const reasons: string[] = [];
+
+  if (uncertaintyScore >= 0.15) reasons.push("high-uncertainty");
+  if (decisionBoundaryValue >= 0.75) reasons.push("near-decision-boundary");
+  if (probeCostRatio <= 0.2) reasons.push("low-probe-cost");
+  reasons.push("within-shadow-budget");
+
+  return {
+    nodeId: candidate.nodeId,
+    uncertaintyScore,
+    informationGainScore,
+    probeCostRatio,
+    selectionScore,
+    budgetLimitUsd,
+    reasons,
+  };
+}
 
 /**
  * Risk-aware placement using lower confidence bounds for quality and upper
@@ -89,19 +142,26 @@ export function scheduleJob(
     .sort((a, b) => a.score - b.score);
   const selected = alternatives[0] ?? null;
 
-  // Shadow execution explores the most uncertain affordable alternative. Its
-  // result becomes counterfactual feedback for the next policy update.
-  const shadowCandidate =
-    alternatives
-      .slice(1)
-      .filter((candidate) => candidate.costUsd <= job.maxCostUsd * 0.35)
-      .sort(
-        (a, b) =>
-          b.latencyUncertaintyMs + b.qualityUncertainty * 1000 -
-          (a.latencyUncertaintyMs + a.qualityUncertainty * 1000),
-      )[0] ?? null;
+  const shadowOptions = alternatives
+    .slice(1)
+    .filter((candidate) => candidate.costUsd <= job.maxCostUsd * 0.35)
+    .map((candidate) => ({
+      candidate,
+      explanation: explainShadowCandidate(job, selected, candidate),
+    }))
+    .sort(
+      (a, b) => b.explanation.selectionScore - a.explanation.selectionScore,
+    );
 
-  return { selected, alternatives, shadowCandidate };
+  const shadowCandidate = shadowOptions[0]?.candidate ?? null;
+  const shadowExplanation = shadowOptions[0]?.explanation ?? null;
+
+  return {
+    selected,
+    alternatives,
+    shadowCandidate,
+    shadowExplanation,
+  };
 }
 
 export type Outcome = {
