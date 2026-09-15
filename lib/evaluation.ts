@@ -1,4 +1,4 @@
-import { scheduleJob, type AiJob, type PlacementPrediction } from "./orchestrator";
+import { scheduleJob, type AiJob, type PlacementPrediction } from "./orchestrator.ts";
 
 export type SchedulingPolicy =
   | "fifo"
