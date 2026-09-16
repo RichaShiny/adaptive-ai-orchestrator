@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ResilienceBenchmark } from "@/components/resilience-benchmark";
 import { runBenchmark } from "@/lib/evaluation";
 import { CounterfactualFeedbackLoop } from "@/lib/feedback";
 import {
@@ -152,6 +153,8 @@ export default function Home() {
             <p className="mt-3 text-sm text-slate-500">Shadow advantage <span className="font-mono text-slate-300">{feedback.signal.shadowAdvantage.toFixed(4)}</span>. Positive values mean the shadow placement delivered lower realized utility cost.</p>
           </div> : null}
         </section>
+
+        <ResilienceBenchmark />
 
         <section className="mt-8">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
