@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ResilienceExportControls } from "@/components/resilience-export-controls";
 import { runDistributionShiftBenchmark } from "@/lib/shift-benchmark";
 
 const phaseOrder = ["baseline", "drift", "recovery"] as const;
@@ -328,6 +329,13 @@ export function ResilienceBenchmark() {
           })}
         </div>
       </section>
+
+      <ResilienceExportControls
+        currentLabel={current.label}
+        current={result}
+        baselineLabel={baseline.label}
+        baseline={baseline.result}
+      />
 
       <p className="mt-3 text-sm text-slate-500">
         This uses the same deterministic engine exposed by <span className="font-mono text-slate-400">npm run benchmark:shift</span>. Matching seed and phase size reproduce the same recovery behavior in the dashboard and CLI.
