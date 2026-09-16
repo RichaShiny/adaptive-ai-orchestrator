@@ -15,38 +15,74 @@ const phaseOrder = ["baseline", "drift", "recovery"] as const;
 const DEFAULT_SEED = 42;
 const DEFAULT_PHASE_SIZE = 30;
 
+type ShiftResult = ReturnType<typeof runDistributionShiftBenchmark>;
+type ExperimentSnapshot = {
+  id: number;
+  label: string;
+  result: ShiftResult;
+};
+
 function positiveInteger(value: string, fallback: number) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function percent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function delta(value: number, baseline: number, digits = 4) {
+  const change = value - baseline;
+  const sign = change > 0 ? "+" : "";
+  return `${sign}${change.toFixed(digits)}`;
+}
+
 export function ResilienceBenchmark() {
+  const defaultResult = useMemo(
+    () => runDistributionShiftBenchmark(DEFAULT_SEED, DEFAULT_PHASE_SIZE),
+    [],
+  );
   const [seedInput, setSeedInput] = useState(String(DEFAULT_SEED));
   const [phaseSizeInput, setPhaseSizeInput] = useState(String(DEFAULT_PHASE_SIZE));
-  const [experiment, setExperiment] = useState({
-    seed: DEFAULT_SEED,
-    phaseSize: DEFAULT_PHASE_SIZE,
-  });
+  const [snapshots, setSnapshots] = useState<ExperimentSnapshot[]>([
+    { id: 1, label: "Run 1", result: defaultResult },
+  ]);
+  const [baselineId, setBaselineId] = useState(1);
+  const [nextRunId, setNextRunId] = useState(2);
 
-  const result = useMemo(
-    () => runDistributionShiftBenchmark(experiment.seed, experiment.phaseSize),
-    [experiment],
-  );
+  const current = snapshots[snapshots.length - 1];
+  const result = current.result;
+  const baseline =
+    snapshots.find((snapshot) => snapshot.id === baselineId) ?? snapshots[0];
 
   const runExperiment = () => {
-    const next = {
-      seed: positiveInteger(seedInput, DEFAULT_SEED),
-      phaseSize: positiveInteger(phaseSizeInput, DEFAULT_PHASE_SIZE),
+    const seed = positiveInteger(seedInput, DEFAULT_SEED);
+    const phaseSize = positiveInteger(phaseSizeInput, DEFAULT_PHASE_SIZE);
+    const nextResult = runDistributionShiftBenchmark(seed, phaseSize);
+    const snapshot = {
+      id: nextRunId,
+      label: `Run ${nextRunId}`,
+      result: nextResult,
     };
-    setSeedInput(String(next.seed));
-    setPhaseSizeInput(String(next.phaseSize));
-    setExperiment(next);
+
+    setSeedInput(String(seed));
+    setPhaseSizeInput(String(phaseSize));
+    setSnapshots((previous) => [...previous, snapshot]);
+    setNextRunId((value) => value + 1);
   };
 
   const resetExperiment = () => {
     setSeedInput(String(DEFAULT_SEED));
     setPhaseSizeInput(String(DEFAULT_PHASE_SIZE));
-    setExperiment({ seed: DEFAULT_SEED, phaseSize: DEFAULT_PHASE_SIZE });
+  };
+
+  const clearHistory = () => {
+    const resetSnapshot = { id: 1, label: "Run 1", result: defaultResult };
+    setSnapshots([resetSnapshot]);
+    setBaselineId(1);
+    setNextRunId(2);
+    setSeedInput(String(DEFAULT_SEED));
+    setPhaseSizeInput(String(DEFAULT_PHASE_SIZE));
   };
 
   return (
@@ -61,7 +97,7 @@ export function ResilienceBenchmark() {
           </h2>
         </div>
         <p className="text-xs text-slate-500">
-          seed {result.seed} · {result.jobs} jobs · {result.phaseSize} per phase
+          {current.label} · seed {result.seed} · {result.jobs} jobs · {result.phaseSize} per phase
         </p>
       </div>
 
@@ -101,11 +137,11 @@ export function ResilienceBenchmark() {
             onClick={resetExperiment}
             className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
           >
-            Reset
+            Reset inputs
           </button>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          Change the seed to replay a different deterministic workload or change phase size to stress recovery over a longer shift window.
+          Each run is kept as an in-session snapshot so you can compare deterministic workloads before clearing the experiment history.
         </p>
       </div>
 
@@ -120,7 +156,7 @@ export function ResilienceBenchmark() {
         />
         <MetricCard
           label="Shadow overhead"
-          value={`${(result.shadowOverheadRate * 100).toFixed(1)}%`}
+          value={percent(result.shadowOverheadRate)}
         />
         <MetricCard
           label="Cost / success"
@@ -146,8 +182,8 @@ export function ResilienceBenchmark() {
                 <TableRow key={phase} className="border-slate-800 hover:bg-slate-800/40">
                   <TableCell className="font-medium capitalize">{phase}</TableCell>
                   <TableCell>{metrics.jobs}</TableCell>
-                  <TableCell>{(metrics.successRate * 100).toFixed(1)}%</TableCell>
-                  <TableCell>{(metrics.sloViolationRate * 100).toFixed(1)}%</TableCell>
+                  <TableCell>{percent(metrics.successRate)}</TableCell>
+                  <TableCell>{percent(metrics.sloViolationRate)}</TableCell>
                   <TableCell className="font-mono">{metrics.meanRegret.toFixed(4)}</TableCell>
                 </TableRow>
               );
@@ -164,7 +200,7 @@ export function ResilienceBenchmark() {
           <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
             <MiniMetric label="Recalibration version" value={`v${result.recalibrationVersion}`} />
             <MiniMetric label="Final confidence" value={`${result.finalConfidenceWidth.toFixed(2)}σ`} />
-            <MiniMetric label="Overall success" value={`${(result.successRate * 100).toFixed(1)}%`} />
+            <MiniMetric label="Overall success" value={percent(result.successRate)} />
             <MiniMetric label="Overall regret" value={result.meanRegret.toFixed(4)} />
           </div>
         </article>
@@ -178,7 +214,7 @@ export function ResilienceBenchmark() {
               <div key={nodeId}>
                 <div className="flex items-center justify-between gap-4 text-sm">
                   <span className="text-slate-300">{nodeId}</span>
-                  <span className="font-mono text-slate-400">{(share * 100).toFixed(1)}%</span>
+                  <span className="font-mono text-slate-400">{percent(share)}</span>
                 </div>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800">
                   <div
@@ -191,6 +227,107 @@ export function ResilienceBenchmark() {
           </div>
         </article>
       </div>
+
+      <section className="mt-4 rounded-2xl border border-slate-800 bg-[#0a1520] p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-violet-300">
+              Experiment comparison
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Latest run compared with {baseline.label}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={clearHistory}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+          >
+            Clear history
+          </button>
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-xl border border-slate-800">
+          <Table>
+            <TableHeader className="bg-slate-900/70 text-slate-400">
+              <TableRow className="border-slate-800 hover:bg-transparent">
+                <TableHead>Metric</TableHead>
+                <TableHead>{baseline.label}</TableHead>
+                <TableHead>{current.label}</TableHead>
+                <TableHead>Delta</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <ComparisonRow
+                label="Success rate"
+                baseline={percent(baseline.result.successRate)}
+                current={percent(result.successRate)}
+                change={`${delta(result.successRate * 100, baseline.result.successRate * 100, 1)} pts`}
+              />
+              <ComparisonRow
+                label="SLO violation rate"
+                baseline={percent(baseline.result.sloViolationRate)}
+                current={percent(result.sloViolationRate)}
+                change={`${delta(result.sloViolationRate * 100, baseline.result.sloViolationRate * 100, 1)} pts`}
+              />
+              <ComparisonRow
+                label="Mean regret"
+                baseline={baseline.result.meanRegret.toFixed(4)}
+                current={result.meanRegret.toFixed(4)}
+                change={delta(result.meanRegret, baseline.result.meanRegret)}
+              />
+              <ComparisonRow
+                label="Shadow overhead"
+                baseline={percent(baseline.result.shadowOverheadRate)}
+                current={percent(result.shadowOverheadRate)}
+                change={`${delta(result.shadowOverheadRate * 100, baseline.result.shadowOverheadRate * 100, 1)} pts`}
+              />
+              <ComparisonRow
+                label="Cost / success"
+                baseline={`$${baseline.result.costPerSuccessfulInferenceUsd.toFixed(4)}`}
+                current={`$${result.costPerSuccessfulInferenceUsd.toFixed(4)}`}
+                change={`$${delta(result.costPerSuccessfulInferenceUsd, baseline.result.costPerSuccessfulInferenceUsd)}`}
+              />
+              <ComparisonRow
+                label="Recovery jobs"
+                baseline={baseline.result.recoveryJobs === null ? "n/a" : String(baseline.result.recoveryJobs)}
+                current={result.recoveryJobs === null ? "n/a" : String(result.recoveryJobs)}
+                change={
+                  baseline.result.recoveryJobs === null || result.recoveryJobs === null
+                    ? "n/a"
+                    : delta(result.recoveryJobs, baseline.result.recoveryJobs, 0)
+                }
+              />
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {snapshots.map((snapshot) => {
+            const isBaseline = snapshot.id === baseline.id;
+            const isCurrent = snapshot.id === current.id;
+            return (
+              <button
+                key={snapshot.id}
+                type="button"
+                onClick={() => setBaselineId(snapshot.id)}
+                className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+                  isBaseline
+                    ? "border-violet-300/40 bg-violet-300/10 text-violet-200"
+                    : "border-slate-700 text-slate-400 hover:bg-slate-800"
+                }`}
+              >
+                <span className="font-medium">{snapshot.label}</span>
+                <span className="ml-2 text-slate-500">
+                  seed {snapshot.result.seed} · {snapshot.result.phaseSize}/phase
+                </span>
+                {isCurrent ? <span className="ml-2 text-emerald-300">latest</span> : null}
+                {isBaseline ? <span className="ml-2 text-violet-300">baseline</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <p className="mt-3 text-sm text-slate-500">
         This uses the same deterministic engine exposed by <span className="font-mono text-slate-400">npm run benchmark:shift</span>. Matching seed and phase size reproduce the same recovery behavior in the dashboard and CLI.
@@ -214,5 +351,26 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 font-mono text-slate-200">{value}</p>
     </div>
+  );
+}
+
+function ComparisonRow({
+  label,
+  baseline,
+  current,
+  change,
+}: {
+  label: string;
+  baseline: string;
+  current: string;
+  change: string;
+}) {
+  return (
+    <TableRow className="border-slate-800 hover:bg-slate-800/40">
+      <TableCell className="font-medium text-slate-300">{label}</TableCell>
+      <TableCell className="font-mono text-slate-400">{baseline}</TableCell>
+      <TableCell className="font-mono text-slate-200">{current}</TableCell>
+      <TableCell className="font-mono text-slate-400">{change}</TableCell>
+    </TableRow>
   );
 }
