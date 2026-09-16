@@ -14,6 +14,7 @@
     "test": "node --test --experimental-strip-types test/evaluation.test.ts test/feedback.test.ts test/benchmark.test.ts test/shadow-selection.test.ts test/lineage.test.ts test/shift-benchmark.test.ts test/resilience-report.test.ts test/shift-policy-comparison.test.ts",
     "benchmark": "node --experimental-strip-types scripts/benchmark.ts",
     "benchmark:shift": "node --experimental-strip-types scripts/shift-benchmark.ts",
+    "benchmark:shift:policies": "node --experimental-strip-types scripts/shift-policy-comparison.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
