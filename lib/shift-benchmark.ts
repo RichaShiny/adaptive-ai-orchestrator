@@ -229,9 +229,10 @@ export function runDistributionShiftBenchmark(
     stableWindowsToRecover: 2,
   });
   const guardrail =
-    options.explorationGuardrails && options.explorationGuardrails !== false
-      ? new ExplorationGuardrailController(options.explorationGuardrails)
-      : null;
+    options.explorationGuardrails === undefined ||
+    options.explorationGuardrails === false
+      ? null
+      : new ExplorationGuardrailController(options.explorationGuardrails);
   const records: JobRecord[] = [];
   const selections: Record<string, number> = {};
   const blockedByReason: Record<ExplorationGuardrailReason, number> = {
