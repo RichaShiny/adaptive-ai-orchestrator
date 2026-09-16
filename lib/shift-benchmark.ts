@@ -1,3 +1,9 @@
+import {
+  ExplorationGuardrailController,
+  type ExplorationGuardrailOptions,
+  type ExplorationGuardrailReason,
+  type ExplorationGuardrailSnapshot,
+} from "./exploration-guardrails.ts";
 import { CounterfactualFeedbackLoop } from "./feedback.ts";
 import {
   scheduleJob,
@@ -6,6 +12,10 @@ import {
 } from "./orchestrator.ts";
 
 export type ShiftPhase = "baseline" | "drift" | "recovery";
+
+export type ShiftBenchmarkOptions = {
+  explorationGuardrails?: ExplorationGuardrailOptions | false;
+};
 
 export type ShiftBenchmarkMetrics = {
   seed: number;
@@ -22,6 +32,13 @@ export type ShiftBenchmarkMetrics = {
   recalibrationVersion: number;
   finalConfidenceWidth: number;
   nodeUtilization: Record<string, number>;
+  explorationGuardrail: {
+    enabled: boolean;
+    shadowExecutions: number;
+    shadowSuppressed: number;
+    blockedByReason: Record<ExplorationGuardrailReason, number>;
+    finalSnapshot: ExplorationGuardrailSnapshot | null;
+  };
   phaseMetrics: Record<
     ShiftPhase,
     {
@@ -201,6 +218,7 @@ function summarizePhase(records: JobRecord[], phase: ShiftPhase) {
 export function runDistributionShiftBenchmark(
   seed = 42,
   phaseSize = 30,
+  options: ShiftBenchmarkOptions = {},
 ): ShiftBenchmarkMetrics {
   const scenario = generateDistributionShiftScenario(seed, phaseSize);
   const loop = new CounterfactualFeedbackLoop({
@@ -210,8 +228,18 @@ export function runDistributionShiftBenchmark(
     qualityErrorThreshold: 0.045,
     stableWindowsToRecover: 2,
   });
+  const guardrail =
+    options.explorationGuardrails && options.explorationGuardrails !== false
+      ? new ExplorationGuardrailController(options.explorationGuardrails)
+      : null;
   const records: JobRecord[] = [];
   const selections: Record<string, number> = {};
+  const blockedByReason: Record<ExplorationGuardrailReason, number> = {
+    "shadow-overhead-budget": 0,
+    "slo-risk-budget": 0,
+  };
+  let shadowExecutions = 0;
+  let shadowSuppressed = 0;
   let driftDetectedAt: number | null = null;
   let recoveredAt: number | null = null;
   let recalibrationVersion = 0;
@@ -221,8 +249,14 @@ export function runDistributionShiftBenchmark(
     const confidenceWidth = loop.getSnapshot().confidenceWidth;
     const decision = scheduleJob(entry.job, entry.predictions, confidenceWidth);
     const selected = decision.selected;
+    const guardrailBefore = guardrail?.getSnapshot() ?? null;
 
     if (!selected) {
+      guardrail?.record({
+        selectedCostUsd: 0,
+        shadowCostUsd: 0,
+        sloViolated: true,
+      });
       records.push({
         phase: entry.phase,
         success: false,
@@ -238,10 +272,25 @@ export function runDistributionShiftBenchmark(
     const selectedActual = entry.actuals.find(
       (actual) => actual.nodeId === selected.nodeId,
     )!;
-    const shadowPrediction = decision.shadowCandidate ?? undefined;
+    const shadowEligible = guardrailBefore?.allowed ?? true;
+
+    if (!shadowEligible && decision.shadowCandidate) {
+      shadowSuppressed += 1;
+      for (const reason of guardrailBefore?.reasons ?? []) {
+        blockedByReason[reason] += 1;
+      }
+    }
+
+    const shadowPrediction = shadowEligible
+      ? decision.shadowCandidate ?? undefined
+      : undefined;
     const shadowActual = shadowPrediction
       ? entry.actuals.find((actual) => actual.nodeId === shadowPrediction.nodeId)
       : undefined;
+
+    if (shadowPrediction && shadowActual) {
+      shadowExecutions += 1;
+    }
 
     const feedback = loop.record(
       entry.step,
@@ -272,6 +321,12 @@ export function runDistributionShiftBenchmark(
       !sloViolated &&
       selectedActual.quality >= entry.job.minimumQuality &&
       selectedActual.costUsd <= entry.job.maxCostUsd;
+
+    guardrail?.record({
+      selectedCostUsd: selectedActual.costUsd,
+      shadowCostUsd: shadowActual?.costUsd ?? 0,
+      sloViolated,
+    });
 
     records.push({
       phase: entry.phase,
@@ -314,6 +369,13 @@ export function runDistributionShiftBenchmark(
     nodeUtilization: Object.fromEntries(
       Object.entries(selections).map(([nodeId, count]) => [nodeId, count / jobs]),
     ),
+    explorationGuardrail: {
+      enabled: guardrail !== null,
+      shadowExecutions,
+      shadowSuppressed,
+      blockedByReason,
+      finalSnapshot: guardrail?.getSnapshot() ?? null,
+    },
     phaseMetrics: {
       baseline: summarizePhase(records, "baseline"),
       drift: summarizePhase(records, "drift"),
