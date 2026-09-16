@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   Table,
   TableBody,
@@ -11,9 +12,42 @@ import {
 import { runDistributionShiftBenchmark } from "@/lib/shift-benchmark";
 
 const phaseOrder = ["baseline", "drift", "recovery"] as const;
+const DEFAULT_SEED = 42;
+const DEFAULT_PHASE_SIZE = 30;
+
+function positiveInteger(value: string, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 export function ResilienceBenchmark() {
-  const result = runDistributionShiftBenchmark(42, 30);
+  const [seedInput, setSeedInput] = useState(String(DEFAULT_SEED));
+  const [phaseSizeInput, setPhaseSizeInput] = useState(String(DEFAULT_PHASE_SIZE));
+  const [experiment, setExperiment] = useState({
+    seed: DEFAULT_SEED,
+    phaseSize: DEFAULT_PHASE_SIZE,
+  });
+
+  const result = useMemo(
+    () => runDistributionShiftBenchmark(experiment.seed, experiment.phaseSize),
+    [experiment],
+  );
+
+  const runExperiment = () => {
+    const next = {
+      seed: positiveInteger(seedInput, DEFAULT_SEED),
+      phaseSize: positiveInteger(phaseSizeInput, DEFAULT_PHASE_SIZE),
+    };
+    setSeedInput(String(next.seed));
+    setPhaseSizeInput(String(next.phaseSize));
+    setExperiment(next);
+  };
+
+  const resetExperiment = () => {
+    setSeedInput(String(DEFAULT_SEED));
+    setPhaseSizeInput(String(DEFAULT_PHASE_SIZE));
+    setExperiment({ seed: DEFAULT_SEED, phaseSize: DEFAULT_PHASE_SIZE });
+  };
 
   return (
     <section className="mt-8">
@@ -28,6 +62,50 @@ export function ResilienceBenchmark() {
         </div>
         <p className="text-xs text-slate-500">
           seed {result.seed} · {result.jobs} jobs · {result.phaseSize} per phase
+        </p>
+      </div>
+
+      <div className="mb-4 rounded-2xl border border-slate-800 bg-[#0a1520] p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-36 flex-1 text-xs text-slate-500">
+            Seed
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={seedInput}
+              onChange={(event) => setSeedInput(event.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400/60"
+            />
+          </label>
+          <label className="min-w-44 flex-1 text-xs text-slate-500">
+            Jobs per phase
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={phaseSizeInput}
+              onChange={(event) => setPhaseSizeInput(event.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400/60"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={runExperiment}
+            className="rounded-lg bg-emerald-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-200"
+          >
+            Run experiment
+          </button>
+          <button
+            type="button"
+            onClick={resetExperiment}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+          >
+            Reset
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Change the seed to replay a different deterministic workload or change phase size to stress recovery over a longer shift window.
         </p>
       </div>
 
@@ -115,7 +193,7 @@ export function ResilienceBenchmark() {
       </div>
 
       <p className="mt-3 text-sm text-slate-500">
-        This is the same deterministic experiment exposed by <span className="font-mono text-slate-400">npm run benchmark:shift</span>, so the dashboard and CLI report the same recovery behavior.
+        This uses the same deterministic engine exposed by <span className="font-mono text-slate-400">npm run benchmark:shift</span>. Matching seed and phase size reproduce the same recovery behavior in the dashboard and CLI.
       </p>
     </section>
   );
