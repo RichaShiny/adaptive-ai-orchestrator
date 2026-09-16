@@ -79,7 +79,7 @@ test("shadow explanation exposes bounded learning and cost signals", () => {
   assert.ok(shadowExplanation.informationGainScore <= 1);
   assert.ok(shadowExplanation.probeCostRatio >= 0);
   assert.ok(shadowExplanation.probeCostRatio <= 1);
-  assert.equal(shadowExplanation.budgetLimitUsd, 0.035);
+  assert.ok(Math.abs(shadowExplanation.budgetLimitUsd - 0.035) < 1e-12);
 });
 
 test("scheduler omits a shadow explanation when no alternative fits the probe budget", () => {
