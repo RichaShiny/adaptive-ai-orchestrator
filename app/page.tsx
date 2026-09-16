@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DecisionLineagePanel } from "@/components/decision-lineage-panel";
 import { ResilienceBenchmark } from "@/components/resilience-benchmark";
 import { runBenchmark } from "@/lib/evaluation";
 import { CounterfactualFeedbackLoop } from "@/lib/feedback";
@@ -131,6 +132,13 @@ export default function Home() {
             </div> : null}
           </article>
         </div>
+
+        <DecisionLineagePanel
+          job={job}
+          predictions={predictions}
+          decision={decision}
+          confidenceWidth={feedback.snapshot.confidenceWidth}
+        />
 
         <section className="mt-8">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
