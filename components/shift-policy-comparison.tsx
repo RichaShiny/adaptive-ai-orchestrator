@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { deriveResearchObservations } from "@/lib/research-summary";
 import { runShiftPolicyComparison } from "@/lib/shift-policy-comparison";
 
 type Props = {
@@ -28,6 +29,7 @@ function points(value: number) {
 
 export function ShiftPolicyComparison({ seed, phaseSize }: Props) {
   const comparison = runShiftPolicyComparison(seed, phaseSize);
+  const observations = deriveResearchObservations(comparison.policies);
 
   return (
     <section className="mt-4 rounded-2xl border border-slate-800 bg-[#0a1520] p-5">
@@ -116,6 +118,33 @@ export function ShiftPolicyComparison({ seed, phaseSize }: Props) {
           </article>
         ))}
       </div>
+
+      <section className="mt-4 rounded-xl border border-cyan-300/15 bg-cyan-300/[.04] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">
+              Research summary
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Deterministic observations derived from this exact benchmark run.
+            </p>
+          </div>
+          <span className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400">
+            evidence-backed
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {observations.map((observation) => (
+            <article
+              key={observation.id}
+              className="rounded-lg border border-slate-800 bg-slate-950/30 p-3"
+            >
+              <p className="text-xs font-medium text-slate-300">{observation.label}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{observation.detail}</p>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <p className="mt-3 text-xs leading-5 text-slate-500">
         Every policy sees the same deterministic jobs, predictions, and realized outcomes. Only the counterfactual policy receives adaptive feedback and recalibration during the shift.
