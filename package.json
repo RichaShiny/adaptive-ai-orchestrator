@@ -11,7 +11,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node --test --experimental-strip-types test/evaluation.test.ts test/feedback.test.ts test/benchmark.test.ts test/shadow-selection.test.ts test/lineage.test.ts test/shift-benchmark.test.ts test/resilience-report.test.ts test/shift-policy-comparison.test.ts test/research-summary.test.ts test/shift-policy-robustness.test.ts test/exploration-guardrails.test.ts test/guardrail-sensitivity.test.ts test/guardrail-robustness.test.ts test/adaptation-ablation.test.ts test/paired-bootstrap-ablation.test.ts",
+    "test": "node --test --experimental-strip-types test/evaluation.test.ts test/feedback.test.ts test/benchmark.test.ts test/shadow-selection.test.ts test/lineage.test.ts test/shift-benchmark.test.ts test/resilience-report.test.ts test/shift-policy-comparison.test.ts test/research-summary.test.ts test/shift-policy-robustness.test.ts test/exploration-guardrails.test.ts test/guardrail-sensitivity.test.ts test/guardrail-robustness.test.ts test/adaptation-ablation.test.ts test/paired-bootstrap-ablation.test.ts test/stress-suite.test.ts",
     "benchmark": "node --experimental-strip-types scripts/benchmark.ts",
     "benchmark:shift": "node --experimental-strip-types scripts/shift-benchmark.ts",
     "benchmark:shift:policies": "node --experimental-strip-types scripts/shift-policy-comparison.ts",
@@ -21,6 +21,7 @@
     "benchmark:shift:guardrail-robustness": "node --experimental-strip-types scripts/guardrail-robustness.ts",
     "benchmark:shift:ablation": "node --experimental-strip-types scripts/adaptation-ablation.ts",
     "benchmark:shift:ablation-bootstrap": "node --experimental-strip-types scripts/paired-bootstrap-ablation.ts",
+    "benchmark:shift:stress": "node --experimental-strip-types scripts/stress-suite.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
