@@ -11,12 +11,13 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node --test --experimental-strip-types test/evaluation.test.ts test/feedback.test.ts test/benchmark.test.ts test/shadow-selection.test.ts test/lineage.test.ts test/shift-benchmark.test.ts test/resilience-report.test.ts test/shift-policy-comparison.test.ts test/research-summary.test.ts test/shift-policy-robustness.test.ts test/exploration-guardrails.test.ts",
+    "test": "node --test --experimental-strip-types test/evaluation.test.ts test/feedback.test.ts test/benchmark.test.ts test/shadow-selection.test.ts test/lineage.test.ts test/shift-benchmark.test.ts test/resilience-report.test.ts test/shift-policy-comparison.test.ts test/research-summary.test.ts test/shift-policy-robustness.test.ts test/exploration-guardrails.test.ts test/guardrail-sensitivity.test.ts",
     "benchmark": "node --experimental-strip-types scripts/benchmark.ts",
     "benchmark:shift": "node --experimental-strip-types scripts/shift-benchmark.ts",
     "benchmark:shift:policies": "node --experimental-strip-types scripts/shift-policy-comparison.ts",
     "benchmark:shift:robustness": "node --experimental-strip-types scripts/shift-policy-robustness.ts",
     "benchmark:shift:guardrails": "node --experimental-strip-types scripts/exploration-guardrails.ts",
+    "benchmark:shift:guardrail-sensitivity": "node --experimental-strip-types scripts/guardrail-sensitivity.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
@@ -49,7 +50,7 @@
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react-dom": "19.2.6",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.4",
