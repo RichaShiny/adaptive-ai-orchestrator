@@ -33,11 +33,19 @@ export type ShiftBenchmarkMetrics = {
   >;
 };
 
-type ActualPlacement = {
+export type ShiftActualPlacement = {
   nodeId: string;
   latencyMs: number;
   quality: number;
   costUsd: number;
+};
+
+export type ShiftScenarioCase = {
+  step: number;
+  phase: ShiftPhase;
+  job: AiJob;
+  predictions: PlacementPrediction[];
+  actuals: ShiftActualPlacement[];
 };
 
 type JobRecord = {
@@ -122,7 +130,7 @@ function realize(
   prediction: PlacementPrediction,
   phase: ShiftPhase,
   random: () => number,
-): ActualPlacement {
+): ShiftActualPlacement {
   const noise = 0.96 + random() * 0.08;
   let latencyMultiplier = noise;
   let qualityDelta = (random() - 0.5) * 0.012;
@@ -148,7 +156,25 @@ function realize(
   };
 }
 
-function realizedUtility(job: AiJob, actual: ActualPlacement) {
+export function generateDistributionShiftScenario(
+  seed = 42,
+  phaseSize = 30,
+): ShiftScenarioCase[] {
+  const random = mulberry32(seed);
+  return Array.from({ length: phaseSize * 3 }, (_, index) => {
+    const phase = phaseFor(index, phaseSize);
+    const predictions = makePredictions(random);
+    return {
+      step: index + 1,
+      phase,
+      job: makeJob(index),
+      predictions,
+      actuals: predictions.map((prediction) => realize(prediction, phase, random)),
+    };
+  });
+}
+
+function realizedUtility(job: AiJob, actual: ShiftActualPlacement) {
   const latencyPenalty =
     Math.max(0, actual.latencyMs - job.latencySloMs) /
     Math.max(job.latencySloMs, 1);
@@ -162,9 +188,7 @@ function summarizePhase(records: JobRecord[], phase: ShiftPhase) {
   const jobs = rows.length;
   return {
     jobs,
-    successRate: jobs
-      ? rows.filter((record) => record.success).length / jobs
-      : 0,
+    successRate: jobs ? rows.filter((record) => record.success).length / jobs : 0,
     sloViolationRate: jobs
       ? rows.filter((record) => record.sloViolated).length / jobs
       : 0,
@@ -178,7 +202,7 @@ export function runDistributionShiftBenchmark(
   seed = 42,
   phaseSize = 30,
 ): ShiftBenchmarkMetrics {
-  const random = mulberry32(seed);
+  const scenario = generateDistributionShiftScenario(seed, phaseSize);
   const loop = new CounterfactualFeedbackLoop({
     windowSize: 12,
     minSamples: 6,
@@ -193,22 +217,14 @@ export function runDistributionShiftBenchmark(
   let recalibrationVersion = 0;
   let finalConfidenceWidth = 1.28;
 
-  const jobs = phaseSize * 3;
-  for (let index = 0; index < jobs; index += 1) {
-    const step = index + 1;
-    const phase = phaseFor(index, phaseSize);
-    const job = makeJob(index);
-    const predictions = makePredictions(random);
+  for (const entry of scenario) {
     const confidenceWidth = loop.getSnapshot().confidenceWidth;
-    const decision = scheduleJob(job, predictions, confidenceWidth);
-    const actuals = predictions.map((prediction) =>
-      realize(prediction, phase, random),
-    );
+    const decision = scheduleJob(entry.job, entry.predictions, confidenceWidth);
     const selected = decision.selected;
 
     if (!selected) {
       records.push({
-        phase,
+        phase: entry.phase,
         success: false,
         sloViolated: true,
         regret: 0,
@@ -219,16 +235,16 @@ export function runDistributionShiftBenchmark(
     }
 
     selections[selected.nodeId] = (selections[selected.nodeId] ?? 0) + 1;
-    const selectedActual = actuals.find(
+    const selectedActual = entry.actuals.find(
       (actual) => actual.nodeId === selected.nodeId,
     )!;
     const shadowPrediction = decision.shadowCandidate ?? undefined;
     const shadowActual = shadowPrediction
-      ? actuals.find((actual) => actual.nodeId === shadowPrediction.nodeId)
+      ? entry.actuals.find((actual) => actual.nodeId === shadowPrediction.nodeId)
       : undefined;
 
     const feedback = loop.record(
-      step,
+      entry.step,
       selected,
       selectedActual,
       shadowPrediction,
@@ -238,25 +254,27 @@ export function runDistributionShiftBenchmark(
     finalConfidenceWidth = feedback.snapshot.confidenceWidth;
 
     if (feedback.snapshot.drifting && driftDetectedAt === null) {
-      driftDetectedAt = step;
+      driftDetectedAt = entry.step;
     }
     if (feedback.snapshot.recoveredAt !== null) {
       recoveredAt = feedback.snapshot.recoveredAt;
     }
 
-    const oracle = actuals.reduce((best, actual) =>
-      realizedUtility(job, actual) < realizedUtility(job, best) ? actual : best,
+    const oracle = entry.actuals.reduce((best, actual) =>
+      realizedUtility(entry.job, actual) < realizedUtility(entry.job, best)
+        ? actual
+        : best,
     );
-    const selectedUtility = realizedUtility(job, selectedActual);
-    const oracleUtility = realizedUtility(job, oracle);
-    const sloViolated = selectedActual.latencyMs > job.latencySloMs;
+    const selectedUtility = realizedUtility(entry.job, selectedActual);
+    const oracleUtility = realizedUtility(entry.job, oracle);
+    const sloViolated = selectedActual.latencyMs > entry.job.latencySloMs;
     const success =
       !sloViolated &&
-      selectedActual.quality >= job.minimumQuality &&
-      selectedActual.costUsd <= job.maxCostUsd;
+      selectedActual.quality >= entry.job.minimumQuality &&
+      selectedActual.costUsd <= entry.job.maxCostUsd;
 
     records.push({
-      phase,
+      phase: entry.phase,
       success,
       sloViolated,
       regret: Math.max(0, selectedUtility - oracleUtility),
@@ -265,6 +283,7 @@ export function runDistributionShiftBenchmark(
     });
   }
 
+  const jobs = scenario.length;
   const successful = records.filter((record) => record.success).length;
   const selectedCost = records.reduce(
     (sum, record) => sum + record.selectedCost,
